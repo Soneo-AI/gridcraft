@@ -297,7 +297,15 @@ impl SheetApp {
         for req in self.session.take_ui_requests() {
             match req {
                 UiRequest::Dialog(name, params) => self.open_dialog(&name, params),
-                UiRequest::Message(m) => self.message = Some((crate::i18n::product_name().into(), m)),
+                UiRequest::Message(m) => {
+                    if self.chrome.read_only {
+                        // A viewer has nothing to decide: engine notes (open-time warnings such
+                        // as dropped conditional formats) go to the info bar, not a modal box.
+                        self.notice = Some(Notice { text: m, kind: NoticeKind::Info, action: None });
+                    } else {
+                        self.message = Some((crate::i18n::product_name().into(), m));
+                    }
+                }
                 UiRequest::EditCell(text) => {
                     let text = text.map(|text| {
                         self.session
@@ -451,5 +459,14 @@ mod read_only_tests {
         assert!(a.set_host_highlight(Some("kein bereich")).is_err());
         a.set_host_highlight(None).unwrap();
         assert!(a.grid.highlight.is_none());
+    }
+
+    #[test]
+    fn engine_messages_become_notices_in_a_read_only_viewer() {
+        let mut a = app();
+        a.session.ui_requests.push(UiRequest::Message("conditional formats were dropped".into()));
+        a.after_engine();
+        assert!(a.message.is_none(), "no modal box in a viewer");
+        assert_eq!(a.notice.as_ref().map(|n| n.text.as_str()), Some("conditional formats were dropped"));
     }
 }
