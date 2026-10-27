@@ -86,15 +86,15 @@ pub fn apply(app: &mut SheetApp, options: &HostOptions) {
             None => log::warn!("koassistSheetOptions.language: unknown `{code}`"),
         }
     }
-    if let Some(mode) = &options.theme {
-        if let Err(e) = app.run("view.theme", json!({"mode": mode})) {
-            log::warn!("koassistSheetOptions.theme: {e}");
-        }
+    if let Some(mode) = &options.theme
+        && let Err(e) = app.run("view.theme", json!({"mode": mode}))
+    {
+        log::warn!("koassistSheetOptions.theme: {e}");
     }
-    if let Some(tokens) = &options.tokens {
-        if let Err(e) = apply_tokens(tokens) {
-            log::warn!("koassistSheetOptions.tokens: {e}");
-        }
+    if let Some(tokens) = &options.tokens
+        && let Err(e) = apply_tokens(tokens)
+    {
+        log::warn!("koassistSheetOptions.tokens: {e}");
     }
 }
 

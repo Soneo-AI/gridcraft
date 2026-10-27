@@ -445,7 +445,7 @@ fn font_definitions_impl(language: crate::i18n::Language, used: &[String], syste
         bound.push(role.to_string());
     }
     #[cfg(target_arch = "wasm32")]
-    embed_interface_fonts(&mut fonts);
+    embed_web_fonts(&mut fonts);
     // Installed workbook fonts, so a cell's chosen font actually renders in it.
     if system {
         for family in crate::fonts::installed_among(used) {
@@ -475,24 +475,40 @@ fn font_definitions_impl(language: crate::i18n::Language, used: &[String], syste
     fonts
 }
 
-/// KoAssist: the browser build has no system fonts, so the interface would fall back to egui's
-/// bundled Ubuntu-Light. Inter (OFL, `assets/fonts`, the faces the WordCraft web build ships)
-/// leads the interface chains instead: Medium for the chrome drawn in [`ui_font`] (ribbon, tabs,
-/// status bar), SemiBold for [`ui_bold`], Regular for plain widget text — so both editors set
-/// their chrome in one face. Cells keep their own roles.
+/// KoAssist: the browser build has no system fonts, so every role fell back to egui's bundled
+/// Ubuntu-Light. Bundled OFL faces (`assets/fonts`) lead the chains instead: Inter (the faces the
+/// WordCraft web build ships) for the interface — Medium for the chrome drawn in [`ui_font`]
+/// (ribbon, tabs, status bar), SemiBold for [`ui_bold`], Regular for plain widget text — so both
+/// editors set their chrome in one face; Carlito, metric-compatible with Calibri (Excel's default
+/// workbook font), for the cell roles, so sheets lay out as they do in Excel.
 #[cfg(target_arch = "wasm32")]
-fn embed_interface_fonts(fonts: &mut FontDefinitions) {
+fn embed_web_fonts(fonts: &mut FontDefinitions) {
     const INTER: &str = "inter";
     const INTER_MEDIUM: &str = "inter-medium";
     const INTER_SEMIBOLD: &str = "inter-semibold";
+    const CARLITO: &str = "carlito";
+    const CARLITO_BOLD: &str = "carlito-bold";
+    const CARLITO_ITALIC: &str = "carlito-italic";
+    const CARLITO_BOLD_ITALIC: &str = "carlito-bold-italic";
     for (key, bytes) in [
         (INTER, &include_bytes!("../../../../assets/fonts/Inter-Regular.ttf")[..]),
         (INTER_MEDIUM, &include_bytes!("../../../../assets/fonts/Inter-Medium.ttf")[..]),
         (INTER_SEMIBOLD, &include_bytes!("../../../../assets/fonts/Inter-SemiBold.ttf")[..]),
+        (CARLITO, &include_bytes!("../../../../assets/fonts/Carlito-Regular.ttf")[..]),
+        (CARLITO_BOLD, &include_bytes!("../../../../assets/fonts/Carlito-Bold.ttf")[..]),
+        (CARLITO_ITALIC, &include_bytes!("../../../../assets/fonts/Carlito-Italic.ttf")[..]),
+        (CARLITO_BOLD_ITALIC, &include_bytes!("../../../../assets/fonts/Carlito-BoldItalic.ttf")[..]),
     ] {
         fonts.font_data.insert(key.into(), Arc::new(FontData::from_static(bytes)));
     }
-    for (role, key) in [(UI, INTER_MEDIUM), (UI_BOLD, INTER_SEMIBOLD)] {
+    for (role, key) in [
+        (UI, INTER_MEDIUM),
+        (UI_BOLD, INTER_SEMIBOLD),
+        (CELL, CARLITO),
+        (CELL_BOLD, CARLITO_BOLD),
+        (CELL_ITALIC, CARLITO_ITALIC),
+        (CELL_BOLD_ITALIC, CARLITO_BOLD_ITALIC),
+    ] {
         if let Some(chain) = fonts.families.get_mut(&FontFamily::Name(role.into())) {
             chain.insert(0, key.into());
         }
@@ -505,7 +521,7 @@ fn embed_interface_fonts(fonts: &mut FontDefinitions) {
 }
 
 /// KoAssist: plain widget text in Inter Regular while the `ui` role stays Medium-led (see
-/// [`embed_interface_fonts`]).
+/// [`embed_web_fonts`]).
 #[cfg(target_arch = "wasm32")]
 fn lead_proportional_with_regular(fonts: &mut FontDefinitions) {
     if let Some(chain) = fonts.families.get_mut(&FontFamily::Proportional)
