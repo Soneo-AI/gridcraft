@@ -140,7 +140,9 @@ pub(super) fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Respo
         && let Some((kind, id, _)) = crate::chartview::hit(app, geo, sh, p)
     {
         app.selected_chart = Some(id);
-        app.grid.object_menu = Some((geo.mirror_pos(p), kind, id));
+        if !app.chrome.read_only {
+            app.grid.object_menu = Some((geo.mirror_pos(p), kind, id));
+        }
         return;
     }
 
@@ -228,7 +230,9 @@ pub(super) fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Respo
             let c = geo.col_at(sh, p.x);
             // A Table heading's filter button, while the header names stand in for the letters.
             if let Some(h) = table_headings(geo, sh, sel.active).into_iter().find(|h| h.col == c && h.button.is_some_and(|b| b.contains(p))) {
-                app.grid.filter_menu = Some((c, h.header_row, geo.mirror_pos(p)));
+                if !app.chrome.read_only {
+                    app.grid.filter_menu = Some((c, h.header_row, geo.mirror_pos(p)));
+                }
                 return;
             }
             if point_header(app, wb, sh, RangeRef::cols(c, c), mods.shift, mods.command) {
@@ -277,7 +281,9 @@ pub(super) fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Respo
         }
         // Filter dropdown buttons.
         if is_filter_button(sh, geo, p) {
-            app.grid.filter_menu = Some((c.col, c.row, geo.mirror_pos(p)));
+            if !app.chrome.read_only {
+                app.grid.filter_menu = Some((c.col, c.row, geo.mirror_pos(p)));
+            }
             return;
         }
         // A dialog's formula box in point mode (New Formatting Rule) takes the reference; the
@@ -600,7 +606,7 @@ pub(super) fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Respo
                 let _ = app.session.run("selection.set", json!({"range": range.a1()}));
             }
             app.grid.header_menu = Some((geo.mirror_pos(p), rows));
-        } else {
+        } else if !app.chrome.read_only {
             app.grid.context_menu = Some(geo.mirror_pos(p));
             app.grid.context_menu_frame = ui.ctx().cumulative_frame_nr();
         }

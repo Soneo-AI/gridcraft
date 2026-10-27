@@ -166,9 +166,18 @@ impl Trace {
     }
 }
 
+/// KoAssist: a range the host marks on one sheet (a cited place), drawn over the grid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Highlight {
+    pub sheet: usize,
+    pub range: RangeRef,
+}
+
 #[derive(Default)]
 pub struct GridState {
     pub drag: Drag,
+    /// KoAssist: the host's mark, see [`Highlight`] and `SheetApp::set_host_highlight`.
+    pub highlight: Option<Highlight>,
     pub ensure_visible: bool,
     /// With `ensure_visible`: scroll to the moving end of the selection instead of the active cell
     /// (Shift/Ctrl+Shift+arrows keep the active cell on the anchor while the far corner moves).

@@ -1,6 +1,50 @@
 use super::*;
 
+/// The error a read-only viewer answers every workbook-changing command with (`Chrome::read_only`).
+pub const READ_ONLY_REFUSED: &str = "read-only: the workbook cannot be changed here";
+
+/// Whether a read-only viewer refuses `id`. Allowed is only what looks at the workbook without
+/// changing it: the view (zoom, theme, panes, show/hide of UI parts), the selection, switching
+/// sheets, copy, find and go-to, app/ui/window plumbing, and the file commands the host needs
+/// (open hands the workbook over, close, saveBytes hands it back). Everything else — cells,
+/// formats, sheets, objects, data, review, every other file command — is refused. An allow-list,
+/// not the engine's `undoable` flag: that flag also marks view changes such as `view.zoom`.
+pub fn read_only_refuses(id: &str) -> bool {
+    const PREFIXES: &[&str] = &["view.", "selection.", "app.", "ui.", "window."];
+    const EXACT: &[&str] = &[
+        "file.open",
+        "file.close",
+        "file.saveBytes",
+        "sheet.activate",
+        "sheet.next",
+        "sheet.previous",
+        "edit.copy",
+        "edit.find",
+        "edit.findNext",
+        "edit.findPrevious",
+        "edit.goTo",
+        "edit.goToSpecial",
+    ];
+    !(PREFIXES.iter().any(|p| id.starts_with(p)) || EXACT.contains(&id))
+}
+
 impl SheetApp {
+    /// KoAssist: the host marks a range (a cited place) on the active sheet. The range is
+    /// drawn over the grid until the next call; it is also selected and scrolled into view.
+    /// `None` clears the mark. Independent of the user's selection afterwards.
+    pub fn set_host_highlight(&mut self, a1: Option<&str>) -> Result<(), String> {
+        let Some(a1) = a1 else {
+            self.grid.highlight = None;
+            return Ok(());
+        };
+        let range = RangeRef::parse(a1).ok_or_else(|| format!("highlight: not an A1 range: {a1}"))?;
+        let sheet = self.session.active().ok_or("highlight: no workbook")?.wb.active_sheet();
+        self.grid.highlight = Some(crate::grid::Highlight { sheet, range });
+        self.run("selection.set", json!({"range": a1}))?;
+        self.grid.ensure_visible = true;
+        Ok(())
+    }
+
     /// Runs an engine command (or a UI command) and handles UI requests it makes.
     pub fn run(&mut self, id: &str, params: Json) -> Result<Json, String> {
         let r = self.run_command(id, params);
@@ -14,6 +58,9 @@ impl SheetApp {
     }
 
     pub(super) fn run_command(&mut self, id: &str, params: Json) -> Result<Json, String> {
+        if self.chrome.read_only && read_only_refuses(id) {
+            return Err(READ_ONLY_REFUSED.into());
+        }
         let switches_window = id.starts_with("window.")
             || matches!(id, "view.newWindow" | "view.hideWindow" | "view.unhideWindow")
             || (id == "view.switchWindows" && ["window", "doc"].iter().any(|k| params.get(*k).is_some_and(|d| !d.is_null())));
@@ -344,5 +391,65 @@ impl SheetApp {
             Some(b) => b.page = page,
             None => self.backstage = Some(backstage::Backstage::new(page)),
         }
+    }
+}
+
+#[cfg(test)]
+mod read_only_tests {
+    use super::*;
+
+    fn app() -> SheetApp {
+        let mut session = gridcraft_engine::Session::default();
+        session.new_workbook();
+        let mut app = SheetApp::new(session, Default::default());
+        app.chrome.read_only = true;
+        app
+    }
+
+    #[test]
+    fn read_only_refuses_changes_but_not_viewing() {
+        assert!(read_only_refuses("cell.set"));
+        assert!(read_only_refuses("edit.paste"));
+        assert!(read_only_refuses("home.insertSheet"));
+        assert!(read_only_refuses("file.save"));
+        assert!(read_only_refuses("file.exportPdf"));
+        assert!(!read_only_refuses("file.open"));
+        assert!(!read_only_refuses("file.close"));
+        assert!(!read_only_refuses("selection.set"));
+        assert!(!read_only_refuses("sheet.activate"));
+        assert!(!read_only_refuses("view.zoom"));
+        assert!(!read_only_refuses("view.zoomIn"));
+        assert!(!read_only_refuses("view.theme"));
+        assert!(read_only_refuses("sheet.rename"));
+        assert!(read_only_refuses("format.bold"));
+        assert!(read_only_refuses("review.protectSheet"));
+        assert!(!read_only_refuses("edit.copy"));
+        assert!(!read_only_refuses("edit.find"));
+    }
+
+    #[test]
+    fn a_read_only_app_keeps_its_cells_and_still_selects() {
+        let mut a = app();
+        let err = a.run("cell.set", json!({"cell": "A1", "input": "nachher"})).unwrap_err();
+        assert_eq!(err, READ_ONLY_REFUSED);
+        assert!(a.session.active().unwrap().wb.active().unwrap().cell(CellRef::new(0, 0)).is_none(), "cell untouched");
+        a.run("selection.set", json!({"range": "B2:C3"})).unwrap();
+        assert_eq!(a.session.active().unwrap().selection.current(), RangeRef::parse("B2:C3").unwrap());
+        a.begin_edit(Some("tippen".into()), false);
+        assert!(a.editor.is_none(), "no in-cell editor in a read-only viewer");
+        assert!(!a.session.active().unwrap().is_dirty());
+    }
+
+    #[test]
+    fn host_highlight_marks_selects_and_clears() {
+        let mut a = app();
+        a.set_host_highlight(Some("B2:D40")).unwrap();
+        let h = a.grid.highlight.expect("marked");
+        assert_eq!((h.sheet, h.range), (0, RangeRef::parse("B2:D40").unwrap()));
+        assert_eq!(a.session.active().unwrap().selection.current(), RangeRef::parse("B2:D40").unwrap());
+        assert!(a.grid.ensure_visible);
+        assert!(a.set_host_highlight(Some("kein bereich")).is_err());
+        a.set_host_highlight(None).unwrap();
+        assert!(a.grid.highlight.is_none());
     }
 }

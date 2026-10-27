@@ -55,10 +55,16 @@ pub struct Chrome {
     /// KoAssist: ribbon tabs an embedding host leaves undrawn (ids from `ribbon::TABS`, e.g.
     /// "Automate"); a hidden active tab falls back to Home.
     pub hidden_tabs: Vec<String>,
+    /// KoAssist: a viewer, not an editor. No ribbon, no formula bar, no cell editing, no
+    /// context menus, and every command that would change the workbook is refused
+    /// (`READ_ONLY_REFUSED`); selecting, scrolling, zooming, switching sheets and copying keep
+    /// working. Opening a workbook (`file.open`) stays allowed: that is how the host hands over
+    /// the file to show.
+    pub read_only: bool,
 }
 
 impl Default for Chrome {
     fn default() -> Self {
-        Chrome { title_bar: true, file_tab: true, hidden_tabs: Vec::new() }
+        Chrome { title_bar: true, file_tab: true, hidden_tabs: Vec::new(), read_only: false }
     }
 }

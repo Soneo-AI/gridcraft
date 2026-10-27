@@ -77,6 +77,19 @@ pub(crate) fn outline_bands(rect: Rect, width: f32, clip: Rect) -> Vec<Rect> {
     sides.into_iter().map(|s| s.intersect(clip)).filter(|s| s.is_finite() && s.width() > 0.0 && s.height() > 0.0).collect()
 }
 
+/// KoAssist: the host's mark (`GridState::highlight`) on sheet `si`, over the selection: a
+/// soft accent fill and a two-pixel accent frame, so the cited place stays visible while the
+/// user selects something else.
+pub(crate) fn paint_highlight(p: &Painter, geo: &Geo, sh: &Sheet, si: usize, app: &SheetApp, t: &Tokens, rows: (u32, u32), cols: (u32, u32)) {
+    let Some(h) = app.grid.highlight else { return };
+    if h.sheet != si || !range_in_pane(h.range, rows, cols) {
+        return;
+    }
+    let r = geo.range_rect(sh, h.range);
+    p.rect_filled(r, 0.0, t.accent.gamma_multiply(0.10));
+    p.rect_stroke(r, 0.0, Stroke::new(2.0, t.accent), StrokeKind::Inside);
+}
+
 /// `outline` is where the current area's border is drawn this frame (see `selection_glide`).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn paint_selection(

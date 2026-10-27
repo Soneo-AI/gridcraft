@@ -230,7 +230,7 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
                                 if resp.clicked() || (resp.secondary_clicked() && !active) {
                                     activate_sheet(app, i);
                                 }
-                                if resp.double_clicked() {
+                                if resp.double_clicked() && !app.chrome.read_only {
                                     app.grid.renaming_tab = Some(i);
                                     app.grid.rename_text = name.clone();
                                 }
@@ -249,6 +249,10 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
                                     }
                                 }
                                 resp.context_menu(|ui| {
+                                    if app.chrome.read_only {
+                                        ui.close();
+                                        return;
+                                    }
                                     ui.set_min_width(180.0);
                                     if ui.button(app.ui.language.tr("Insert Sheet")).clicked() {
                                         app.run_or_alert("home.insertSheet", json!({"before": i}));
@@ -301,7 +305,7 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
                     });
             });
             ui.add_space(6.0);
-            if crate::widgets::icon_button(ui, Icon::Plus, t.text_dim, app.ui.language.tr("New sheet (⇧F11)"), vec2(26.0, 26.0)).clicked() {
+            if !app.chrome.read_only && crate::widgets::icon_button(ui, Icon::Plus, t.text_dim, app.ui.language.tr("New sheet (⇧F11)"), vec2(26.0, 26.0)).clicked() {
                 app.run_or_alert("home.insertSheet", json!({}));
             }
             // The track ends where the grid does, so it stops under the vertical scrollbar.

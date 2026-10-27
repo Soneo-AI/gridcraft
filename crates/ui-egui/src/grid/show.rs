@@ -4,7 +4,7 @@ use super::geo::Geo;
 use super::interact::{interact, paint_freeze_handles};
 use super::menus::{context_menu, error_check_tag, fill_menu, fill_options_tag, filter_menu, header_menu, object_menu};
 use super::quadrant::{mirror_painted, paint_quadrant};
-use super::selection::paint_selection;
+use super::selection::{paint_highlight, paint_selection};
 use super::tables::{TableHeading, paint_filter_button, table_headings};
 use super::*;
 
@@ -323,6 +323,7 @@ fn paint_panes(
         let p = painter.with_clip_rect(*clip);
         paint_quadrant(&p, geo, wb, si, sh, *rows, *cols, cf, t);
         paint_selection(&p, geo, sh, sel, outline, t, app, *rows, *cols);
+        paint_highlight(&p, geo, sh, si, app, t, *rows, *cols);
     }
     // Freeze lines.
     if geo.fr > 0 {
