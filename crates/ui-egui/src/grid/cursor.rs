@@ -22,7 +22,7 @@ pub(super) fn update_cursor(app: &mut SheetApp, ui: &egui::Ui, resp: &egui::Resp
         app.grid.hover_cell = in_cells.then(|| geo.cell_at(sh, p));
     }
     // Draw tools own the cursor over cells, including while recording a stroke.
-    if !app.session.draw_tool.is_empty() && in_cells {
+    if !app.chrome.read_only && !app.session.draw_tool.is_empty() && in_cells {
         ctx.set_cursor_icon(CursorIcon::Crosshair);
         return;
     }
@@ -62,6 +62,12 @@ fn hover_cursor(app: &SheetApp, ctx: &egui::Context, resp: &egui::Response, poin
     let (freeze_cols, freeze_rows) = freeze_handles(geo);
     if freeze_cols.contains(p) || freeze_rows.contains(p) {
         freeze_cursor(app, ctx, resp, pointer, freeze_cols.contains(p));
+        return;
+    }
+    // A read-only viewer: nothing to resize, fill or move — the cell cursor over cells, the
+    // arrow elsewhere (freezing panes above stays, it is a view setting).
+    if app.chrome.read_only {
+        ctx.set_cursor_icon(if geo.in_cells(p) { CursorIcon::Cell } else { CursorIcon::Default });
         return;
     }
     let in_cells = geo.in_cells(p);

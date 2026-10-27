@@ -141,8 +141,8 @@ pub(crate) fn paint_selection(
     if active_here && sel.ranges.len() > 1 {
         p.rect_stroke(active, 0.0, Stroke::new(1.0, t.sel_border), StrokeKind::Inside);
     }
-    // Fill handle (bottom-right of the current area).
-    if app.editor.is_none() && range_in_pane(RangeRef::cell(sel.current().end), rows, cols) {
+    // Fill handle (bottom-right of the current area); a read-only viewer has none to drag.
+    if !app.chrome.read_only && app.editor.is_none() && range_in_pane(RangeRef::cell(sel.current().end), rows, cols) {
         let h = Rect::from_center_size(outline.right_bottom(), vec2(6.0, 6.0));
         p.rect_filled(h.expand(1.0), 0.0, Color32::WHITE);
         p.rect_filled(h, 0.0, t.sel_border);

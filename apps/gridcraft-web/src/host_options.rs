@@ -87,7 +87,7 @@ pub fn apply(app: &mut SheetApp, options: &HostOptions) {
         app.chrome.hidden_tabs = tabs.clone();
     }
     if options.read_only {
-        app.chrome.read_only = true;
+        app.set_read_only(true);
     }
     if let Some(name) = &options.product_name {
         gridcraft_ui_egui::i18n::set_product_name(name);
@@ -164,7 +164,7 @@ pub fn handle(app: &mut SheetApp, method: &str, p: &Value) -> Option<Outcome> {
                 app.chrome.hidden_tabs = tabs;
             }
             if let Some(on) = p.get("read_only").and_then(Value::as_bool) {
-                app.chrome.read_only = on;
+                app.set_read_only(on);
             }
             ok(json!({"title_bar": app.chrome.title_bar, "file_tab": app.chrome.file_tab, "hidden_tabs": app.chrome.hidden_tabs, "read_only": app.chrome.read_only}))
         }

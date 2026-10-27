@@ -828,6 +828,10 @@ fn ruler_margins(app: &mut SheetApp, ui: &mut egui::Ui, geo: &Geo, pg: &PageGrid
         }
         return;
     }
+    // A read-only viewer: the rulers show the margins but never move them.
+    if app.chrome.read_only {
+        return;
+    }
     for (resp, h) in [(&hresp, true), (&vresp, false)] {
         let Some(pos) = resp.hover_pos().or_else(|| resp.interact_pointer_pos()) else { continue };
         let origin = if resp.drag_started() { ui.input(|i| i.pointer.press_origin()).unwrap_or(pos) } else { pos };

@@ -183,7 +183,9 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
                                 let font = if active { theme::ui_bold(13.0) } else { theme::ui_font(13.0) };
                                 let tw = ui.painter().layout_no_wrap(name.clone(), font.clone(), t.text).size().x;
                                 let w = (tw + 32.0).max(72.0);
-                                let (r, resp) = ui.allocate_exact_size(vec2(w, 30.0), Sense::click_and_drag());
+                                // A read-only viewer switches sheets but never reorders or copies them.
+                                let sense = if app.chrome.read_only { Sense::click() } else { Sense::click_and_drag() };
+                                let (r, resp) = ui.allocate_exact_size(vec2(w, 30.0), sense);
                                 if active && reveal_active {
                                     resp.scroll_to_me(None);
                                 }
@@ -397,20 +399,27 @@ pub fn status_bar(app: &mut SheetApp, ui: &mut Ui) {
                         app.run_or_alert("view.zoom", json!({"percent": z}));
                     }
                     ui.add_space(10.0);
-                    for (icon, tip, mode, cmd) in [
-                        (Icon::PageBreak, "Page Break Preview", "pageBreakPreview", "view.pageBreakPreview"),
-                        (Icon::PageLayout, "Page Layout", "pageLayout", "view.pageLayout"),
-                        (Icon::Normal, "Normal", "normal", "view.normal"),
-                    ] {
+                    // A read-only viewer keeps the normal view: page layout and page break preview
+                    // carry editing handles (margins, page breaks) and are refused there.
+                    let view_modes: &[(Icon, &str, &str, &str)] = if app.chrome.read_only {
+                        &[]
+                    } else {
+                        &[
+                            (Icon::PageBreak, "Page Break Preview", "pageBreakPreview", "view.pageBreakPreview"),
+                            (Icon::PageLayout, "Page Layout", "pageLayout", "view.pageLayout"),
+                            (Icon::Normal, "Normal", "normal", "view.normal"),
+                        ]
+                    };
+                    for (icon, tip, mode, cmd) in view_modes {
                         let (r, resp) = ui.allocate_exact_size(vec2(26.0, 20.0), Sense::click());
                         let cur = app.session.active().and_then(|d| d.wb.active().map(|s| s.view.as_str())).unwrap_or("normal");
-                        if cur == mode {
+                        if cur == *mode {
                             ui.painter().rect_filled(r, 3.0, t.pressed);
                         } else if resp.hovered() {
                             ui.painter().rect_filled(r, 3.0, t.hover);
                         }
-                        icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(14.0, 14.0)), icon, t.text_dim);
-                        if resp.on_hover_text(tip).clicked() {
+                        icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(14.0, 14.0)), *icon, t.text_dim);
+                        if resp.on_hover_text(*tip).clicked() {
                             app.run_or_alert(cmd, json!({}));
                         }
                     }

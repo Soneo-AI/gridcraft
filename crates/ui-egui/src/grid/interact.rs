@@ -38,8 +38,15 @@ pub(super) fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Respo
     let on_cur_border = |p: Pos2| on_border(cur_rect, p) && border_panes.iter().any(|r| r.contains(p));
 
     let (freeze_cols, freeze_rows) = freeze_handles(geo);
+    // A read-only viewer (KoAssist, `Chrome::read_only`): no mouse path may change the workbook.
+    // The press paths below are skipped, and a changing drag left over from the editor is dropped
+    // here — the drags run the engine directly (`session.run`), past the command allow-list.
+    let read_only = app.chrome.read_only;
+    if read_only && !matches!(app.grid.drag, Drag::None | Drag::Select | Drag::Rows(_) | Drag::Cols(_) | Drag::Freeze { .. }) {
+        app.grid.drag = Drag::None;
+    }
     // Draw tab tools: the pen records a stroke, the eraser deletes ink under the pointer.
-    if !app.session.draw_tool.is_empty() && in_cells {
+    if !read_only && !app.session.draw_tool.is_empty() && in_cells {
         ctx.set_cursor_icon(CursorIcon::Crosshair);
         if app.session.draw_tool == "pen" {
             if let Some(p) = pos
@@ -85,7 +92,8 @@ pub(super) fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Respo
     }
     // A plain click on a slicer value tile toggles it (Ctrl/Cmd for multi-select); the clear
     // button resets it. Runs before the generic object select/drag so tiles stay clickable.
-    if primary_clicked
+    if !read_only
+        && primary_clicked
         && !resp.drag_started()
         && let Some(p) = pos
         && let Some((id, act)) = crate::chartview::slicer_click(geo, sh, wb, wb.active_sheet(), p)
@@ -104,7 +112,8 @@ pub(super) fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Respo
     // Objects (charts, pictures, shapes, slicers) take clicks first. Only the primary button moves
     // them: a right-click that wobbles into a drag still opens the object's menu (#2067).
     let primary_drag = resp.drag_started_by(egui::PointerButton::Primary);
-    if primary_drag || primary_clicked {
+    // In a read-only viewer objects are not selectable: no handles, no move, no resize.
+    if !read_only && (primary_drag || primary_clicked) {
         // A drag is recognised only after the pointer has moved, so grab the object where the press began.
         let at = if primary_drag { pointer.press_origin().or(pos) } else { pos };
         if let Some(p) = at
@@ -135,19 +144,19 @@ pub(super) fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Respo
     // A right-click on a chart, picture, shape or slicer opens the object's menu, not the cell's
     // under it; a right press that wobbles into a drag counts too (#2067).
     let secondary_drag = resp.drag_started_by(egui::PointerButton::Secondary);
-    if (resp.secondary_clicked() || secondary_drag)
+    if !read_only
+        && (resp.secondary_clicked() || secondary_drag)
         && let Some(p) = if secondary_drag { pointer.press_origin().map(|p| geo.mirror_pos(p)).or(pos) } else { pos }
         && let Some((kind, id, _)) = crate::chartview::hit(app, geo, sh, p)
     {
         app.selected_chart = Some(id);
-        if !app.chrome.read_only {
-            app.grid.object_menu = Some((geo.mirror_pos(p), kind, id));
-        }
+        app.grid.object_menu = Some((geo.mirror_pos(p), kind, id));
         return;
     }
 
     // A double-click is also a click: handle header AutoFit before resize setup returns.
-    if resp.double_clicked()
+    if !read_only
+        && resp.double_clicked()
         && let Some(p) = pos
     {
         let unhide = if in_col_header {
@@ -182,7 +191,8 @@ pub(super) fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Respo
     }
 
     // Double-click the fill handle: a double-click is also a click, so run it before the handle press returns.
-    if resp.double_clicked()
+    if !read_only
+        && resp.double_clicked()
         && let Some(p) = pos
         && on_handle(p)
     {
@@ -223,7 +233,9 @@ pub(super) fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Respo
             return;
         }
         if in_col_header {
-            if let Some((c, x)) = col_edge(geo, sh, p.x) {
+            if !read_only
+                && let Some((c, x)) = col_edge(geo, sh, p.x)
+            {
                 app.grid.drag = Drag::ResizeCol { col: c, start: p.x, orig: sh.col_width(c).max(0.0) * 0.0 + (x - geo.x(sh, c)) / geo.z };
                 return;
             }
@@ -239,7 +251,8 @@ pub(super) fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Respo
                 return;
             }
             // An armed Format Painter paints the columns dragged over instead of moving them.
-            if resp.drag_started()
+            if !read_only
+                && resp.drag_started()
                 && !mods.any()
                 && app.session.format_painter.is_none()
                 && sel.ranges.len() == 1
@@ -255,7 +268,9 @@ pub(super) fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Respo
             return;
         }
         if in_row_header {
-            if let Some((r, y)) = row_edge(geo, sh, p.y) {
+            if !read_only
+                && let Some((r, y)) = row_edge(geo, sh, p.y)
+            {
                 app.grid.drag = Drag::ResizeRow { row: r, start: p.y, orig: (y - geo.y(sh, r)) / geo.z };
                 return;
             }
@@ -273,7 +288,8 @@ pub(super) fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Respo
         }
         let c = geo.cell_at(sh, p);
         // Data validation list arrow next to the active cell.
-        if let Some(r) = validation_arrow(sh, geo, sel.active)
+        if !read_only
+            && let Some(r) = validation_arrow(sh, geo, sel.active)
             && r.contains(p)
         {
             app.grid.list_picker = Some(sel.active);
@@ -335,11 +351,11 @@ pub(super) fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Respo
         if app.editor.is_some() && !app.commit_edit(0, 0, false, false) {
             return;
         }
-        if on_handle(p) {
+        if !read_only && on_handle(p) {
             app.grid.drag = Drag::Fill { target: None, menu: resp.drag_started_by(egui::PointerButton::Secondary) };
             return;
         }
-        if on_cur_border(p) && resp.drag_started() {
+        if !read_only && on_cur_border(p) && resp.drag_started() {
             app.grid.drag = Drag::Move { grab: c, to: None };
             return;
         }
@@ -388,7 +404,7 @@ pub(super) fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Respo
             }
         } else {
             let _ = app.session.run("selection.set", json!({"cell": c.a1()}));
-            if primary_clicked && wb.styles.get(sh.style_id(c)).num_fmt.as_str() == "checkbox" {
+            if !read_only && primary_clicked && wb.styles.get(sh.style_id(c)).num_fmt.as_str() == "checkbox" {
                 let _ = app.run("cell.toggleCheckbox", json!({"cell": c.a1()}));
             }
             // A click on a hyperlink's text follows it (like Excel); elsewhere in the cell selects.
@@ -605,8 +621,10 @@ pub(super) fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Respo
                 let range = if rows { RangeRef::rows(idx, idx) } else { RangeRef::cols(idx, idx) };
                 let _ = app.session.run("selection.set", json!({"range": range.a1()}));
             }
-            app.grid.header_menu = Some((geo.mirror_pos(p), rows));
-        } else if !app.chrome.read_only {
+            if !read_only {
+                app.grid.header_menu = Some((geo.mirror_pos(p), rows));
+            }
+        } else if !read_only {
             app.grid.context_menu = Some(geo.mirror_pos(p));
             app.grid.context_menu_frame = ui.ctx().cumulative_frame_nr();
         }

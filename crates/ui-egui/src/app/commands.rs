@@ -10,6 +10,11 @@ pub const READ_ONLY_REFUSED: &str = "read-only: the workbook cannot be changed h
 /// formats, sheets, objects, data, review, every other file command — is refused. An allow-list,
 /// not the engine's `undoable` flag: that flag also marks view changes such as `view.zoom`.
 pub fn read_only_refuses(id: &str) -> bool {
+    // View modes that bring editing handles with them (page margins, page breaks).
+    const DENIED: &[&str] = &["view.pageLayout", "view.pageBreakPreview"];
+    if DENIED.contains(&id) {
+        return true;
+    }
     const PREFIXES: &[&str] = &["view.", "selection.", "app.", "ui.", "window."];
     const EXACT: &[&str] = &[
         "file.open",
@@ -29,6 +34,34 @@ pub fn read_only_refuses(id: &str) -> bool {
 }
 
 impl SheetApp {
+    /// KoAssist: switch the viewer's read-only mode. Entering it drops every editing state the
+    /// editor may have left in the same app — an open in-cell or text-box editor, a selected
+    /// object (its resize handles), a drag, menus, the draw tool, an armed Format Painter —
+    /// so nothing looks or acts editable afterwards.
+    pub fn set_read_only(&mut self, on: bool) {
+        self.chrome.read_only = on;
+        if !on {
+            return;
+        }
+        self.cancel_edit();
+        self.cancel_text_box_edit();
+        self.selected_chart = None;
+        self.grid.drag = crate::grid::Drag::None;
+        self.grid.drag_select = false;
+        self.grid.ink.clear();
+        self.grid.object_menu = None;
+        self.grid.context_menu = None;
+        self.grid.filter_menu = None;
+        self.grid.header_menu = None;
+        self.grid.fill_menu = None;
+        self.grid.list_picker = None;
+        self.grid.renaming_tab = None;
+        self.grid.pane = None;
+        self.grid.ruler_drag = None;
+        self.session.draw_tool.clear();
+        self.session.format_painter = None;
+    }
+
     /// KoAssist: the host marks a range (a cited place) on the active sheet. The range is
     /// drawn over the grid until the next call; it is also selected and scrolled into view.
     /// `None` clears the mark. Independent of the user's selection afterwards.
@@ -412,6 +445,37 @@ mod read_only_tests {
         let mut app = SheetApp::new(session, Default::default());
         app.chrome.read_only = true;
         app
+    }
+
+    #[test]
+    fn entering_read_only_drops_every_editing_state_of_the_editor() {
+        let mut session = gridcraft_engine::Session::default();
+        session.new_workbook();
+        let mut a = SheetApp::new(session, Default::default());
+        a.begin_edit(Some("tippen".into()), false);
+        assert!(a.editor.is_some(), "the editor edits");
+        a.selected_chart = Some(7);
+        a.grid.drag = crate::grid::Drag::Object { kind: "picture", id: 7, start: egui::Pos2::ZERO, orig: (CellRef::new(0, 0), 0.0, 0.0, 10.0, 10.0), resize: true };
+        a.grid.pane = Some("formatChart".into());
+        a.grid.context_menu = Some(egui::Pos2::ZERO);
+        a.session.draw_tool = "pen".into();
+        a.set_read_only(true);
+        assert!(a.chrome.read_only);
+        assert!(a.editor.is_none(), "no in-cell editor in a viewer");
+        assert_eq!(a.selected_chart, None, "no object handles in a viewer");
+        assert_eq!(a.grid.drag, crate::grid::Drag::None);
+        assert!(a.grid.pane.is_none() && a.grid.context_menu.is_none());
+        assert!(a.session.draw_tool.is_empty());
+        a.set_read_only(false);
+        assert!(!a.chrome.read_only);
+    }
+
+    #[test]
+    fn read_only_refuses_the_view_modes_with_editing_handles() {
+        assert!(read_only_refuses("view.pageLayout"));
+        assert!(read_only_refuses("view.pageBreakPreview"));
+        assert!(!read_only_refuses("view.normal"));
+        assert!(!read_only_refuses("view.freezePanes"));
     }
 
     #[test]
