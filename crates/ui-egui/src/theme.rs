@@ -151,12 +151,14 @@ const SHEET_CONTROL_TEXT: Color32 = rgb(0x1F1F1F);
 const SHEET_TRACK: Color32 = rgb(0xD6D6D6);
 
 impl Tokens {
+    /// The light palette, with the host's overlay if one is set ([`set_host_tokens`]).
     pub fn light() -> Tokens {
-        Tokens::palette(false)
+        host_overlay(Tokens::palette(false), false)
     }
 
+    /// The dark palette, with the host's overlay if one is set ([`set_host_tokens`]).
     pub fn dark() -> Tokens {
-        Tokens::palette(true)
+        host_overlay(Tokens::palette(true), true)
     }
 
     /// One palette for both modes: each colour is written once, with its light and dark values.
@@ -405,3 +407,186 @@ mod contrast_tests {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests;
+
+/// Colours an embedding host lays over a palette (KoAssist, `host.tokens`): token name → colour.
+/// Set once per theme ([`set_host_tokens`]); [`Tokens::light`] and [`Tokens::dark`] apply it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HostTokens(Vec<(String, Color32)>);
+
+static HOST_TOKENS: std::sync::RwLock<[Option<HostTokens>; 2]> = std::sync::RwLock::new([None, None]);
+
+/// The token names a host may set: the colour fields of [`Tokens`].
+pub const HOST_TOKEN_NAMES: &[&str] = &[
+    "window",
+    "ribbon",
+    "ribbon_border",
+    "text",
+    "text_dim",
+    "text_disabled",
+    "accent",
+    "accent_dark",
+    "accent_soft",
+    "hover",
+    "pressed",
+    "separator",
+    "grid_bg",
+    "desk",
+    "gridline",
+    "header_bg",
+    "header_text",
+    "header_line",
+    "header_sel_bg",
+    "header_sel_text",
+    "header_all_bg",
+    "sel_fill",
+    "sel_border",
+    "input_bg",
+    "input_border",
+    "tab_bar",
+    "tab_active",
+    "status_bar",
+    "cell_text",
+    "menu_bg",
+    "shadow",
+    "danger",
+    "error_check_green",
+    "warning_fill",
+    "warning_ink",
+    "notice_warn_bg",
+    "notice_warn_border",
+    "notice_info_bg",
+    "notice_info_border",
+    "on_accent",
+    "paper",
+    "warning",
+    "on_warning",
+    "sheet_control_bg",
+    "sheet_control_border",
+    "sheet_control_text",
+    "sheet_track",
+];
+
+impl HostTokens {
+    /// From `{"accent": "#0f4f4a", …}`. An unknown name is an error (a typo would otherwise do
+    /// nothing, silently); colours are `#rgb`, `#rrggbb` or `#rrggbbaa`.
+    pub fn from_json(v: &serde_json::Value) -> Result<Self, String> {
+        let Some(map) = v.as_object() else { return Err("expected an object of token colours".into()) };
+        let mut out = Vec::with_capacity(map.len());
+        for (name, value) in map {
+            if !HOST_TOKEN_NAMES.contains(&name.as_str()) {
+                return Err(format!("unknown token `{name}`"));
+            }
+            let Some(text) = value.as_str() else { return Err(format!("`{name}`: expected a colour string")) };
+            let Some(color) = parse_hex_color(text) else { return Err(format!("`{name}`: not a colour: {text:?}")) };
+            out.push((name.clone(), color));
+        }
+        Ok(HostTokens(out))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+/// Install (or, with an empty set, drop) the host's overlay for the light or dark palette.
+pub fn set_host_tokens(dark: bool, tokens: HostTokens) {
+    if let Ok(mut slots) = HOST_TOKENS.write() {
+        slots[usize::from(dark)] = if tokens.is_empty() { None } else { Some(tokens) };
+    }
+}
+
+/// How many tokens the host overlays on the light or dark palette.
+pub fn host_token_count(dark: bool) -> usize {
+    HOST_TOKENS.read().ok().and_then(|slots| slots[usize::from(dark)].as_ref().map(HostTokens::len)).unwrap_or(0)
+}
+
+fn host_overlay(mut t: Tokens, dark: bool) -> Tokens {
+    let Ok(slots) = HOST_TOKENS.read() else { return t };
+    let Some(host) = slots[usize::from(dark)].as_ref() else { return t };
+    for (name, color) in &host.0 {
+        let c = *color;
+        match name.as_str() {
+            "window" => t.window = c,
+            "ribbon" => t.ribbon = c,
+            "ribbon_border" => t.ribbon_border = c,
+            "text" => t.text = c,
+            "text_dim" => t.text_dim = c,
+            "text_disabled" => t.text_disabled = c,
+            "accent" => t.accent = c,
+            "accent_dark" => t.accent_dark = c,
+            "accent_soft" => t.accent_soft = c,
+            "hover" => t.hover = c,
+            "pressed" => t.pressed = c,
+            "separator" => t.separator = c,
+            "grid_bg" => t.grid_bg = c,
+            "desk" => t.desk = c,
+            "gridline" => t.gridline = c,
+            "header_bg" => t.header_bg = c,
+            "header_text" => t.header_text = c,
+            "header_line" => t.header_line = c,
+            "header_sel_bg" => t.header_sel_bg = c,
+            "header_sel_text" => t.header_sel_text = c,
+            "header_all_bg" => t.header_all_bg = c,
+            "sel_fill" => t.sel_fill = c,
+            "sel_border" => t.sel_border = c,
+            "input_bg" => t.input_bg = c,
+            "input_border" => t.input_border = c,
+            "tab_bar" => t.tab_bar = c,
+            "tab_active" => t.tab_active = c,
+            "status_bar" => t.status_bar = c,
+            "cell_text" => t.cell_text = c,
+            "menu_bg" => t.menu_bg = c,
+            "shadow" => t.shadow = c,
+            "danger" => t.danger = c,
+            "error_check_green" => t.error_check_green = c,
+            "warning_fill" => t.warning_fill = c,
+            "warning_ink" => t.warning_ink = c,
+            "notice_warn_bg" => t.notice_warn_bg = c,
+            "notice_warn_border" => t.notice_warn_border = c,
+            "notice_info_bg" => t.notice_info_bg = c,
+            "notice_info_border" => t.notice_info_border = c,
+            "on_accent" => t.on_accent = c,
+            "paper" => t.paper = c,
+            "warning" => t.warning = c,
+            "on_warning" => t.on_warning = c,
+            "sheet_control_bg" => t.sheet_control_bg = c,
+            "sheet_control_border" => t.sheet_control_border = c,
+            "sheet_control_text" => t.sheet_control_text = c,
+            "sheet_track" => t.sheet_track = c,
+            _ => {}
+        }
+    }
+    t
+}
+
+/// `#rgb`, `#rrggbb` or `#rrggbbaa` (case-insensitive) → colour; anything else → `None`.
+pub fn parse_hex_color(text: &str) -> Option<Color32> {
+    let hex = text.trim().strip_prefix('#')?;
+    let digit = |i: usize| u8::from_str_radix(hex.get(i..i + 1)?, 16).ok();
+    let byte = |i: usize| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok();
+    match hex.len() {
+        3 => Some(Color32::from_rgb(digit(0)? * 17, digit(1)? * 17, digit(2)? * 17)),
+        6 => Some(Color32::from_rgb(byte(0)?, byte(2)?, byte(4)?)),
+        8 => Some(Color32::from_rgba_unmultiplied(byte(0)?, byte(2)?, byte(4)?, byte(6)?)),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod host_tokens_tests {
+    use super::*;
+
+    #[test]
+    fn hex_colours_and_unknown_names() {
+        assert_eq!(parse_hex_color("#0f4f4a"), Some(Color32::from_rgb(0x0F, 0x4F, 0x4A)));
+        assert_eq!(parse_hex_color("#FFF"), Some(Color32::WHITE));
+        assert_eq!(parse_hex_color("0f4f4a"), None);
+        assert!(HostTokens::from_json(&serde_json::json!({"accent": "#0f4f4a"})).is_ok());
+        assert!(HostTokens::from_json(&serde_json::json!({"acent": "#0f4f4a"})).is_err());
+        assert!(HostTokens::from_json(&serde_json::json!({"accent": "teal"})).is_err());
+    }
+}

@@ -41,12 +41,21 @@ pub fn start() {
         // workbooks in it and stores what it saves (`host`).
         let bridge = if query_param("host").as_deref() == Some("parent") { crate::host::Bridge::new() } else { None };
         let app_bridge = bridge.clone();
+        // KoAssist: the page that holds the canvas drives the app through `window.gridcraft`
+        // (`bridge`) and sets `window.gridcraftOptions` before the start (`host_options`).
+        let inbox: Inbox = Inbox::default();
+        let kobridge = crate::bridge::Bridge::default();
+        if let Err(e) = kobridge.install(inbox.clone()) {
+            log::error!("no JavaScript bridge: {e}");
+        }
+        let kobridge_ready = kobridge.clone();
+        let host = crate::host_options::read();
         let result = eframe::WebRunner::new()
             .start(
                 canvas,
                 options,
                 Box::new(move |cc| {
-                    let inbox: Inbox = Inbox::default();
+                    let inbox = inbox.clone();
                     let mut session = Session::new();
                     // In host mode the parent sends the workbook to edit; no sample meanwhile.
                     let q = if app_bridge.is_some() { String::new() } else { query() };
@@ -55,11 +64,12 @@ pub fn start() {
                     } else if q.contains("sample") {
                         let _ = session.execute("file.new", serde_json::json!({"sample": "sales"}));
                     }
-                    let mut services = services(inbox.clone(), cc.egui_ctx.clone());
+                    let mut services = services(inbox.clone(), cc.egui_ctx.clone(), kobridge.clone(), host.embedded);
                     if let Some(bridge) = &app_bridge {
                         bridge.connect(&mut services, inbox.clone(), cc.egui_ctx.clone());
                     }
                     let mut app = SheetApp::new(session, services);
+                    kobridge.attach(cc.egui_ctx.clone());
                     app.ui.system_theme = true;
                     // `?chrome=none|notitlebar|nofiletab`: a host that embeds the sheet in its own window and owns the files
                     // can leave the title bar and/or the File tab undrawn (`Chrome`, #1877). An unknown value keeps
@@ -87,6 +97,8 @@ pub fn start() {
                     // and `prefs.json`; a saved language replaces the browser's.
                     let (stored_ui, stored_prefs) = (stored(crate::prefs::UI_KEY), stored(crate::prefs::PREFS_KEY));
                     crate::prefs::restore(&mut app, stored_ui.as_deref(), stored_prefs.as_deref());
+                    // KoAssist: options the page set before the start win over the stored preferences.
+                    crate::host_options::apply(&mut app, &host);
                     let mut prefs = crate::prefs::PrefsSync::new(stored_ui, stored_prefs);
                     SheetApp::setup_context_for_language(&cc.egui_ctx, false, app.ui.language);
                     if let Some(bridge) = &app_bridge {
@@ -96,12 +108,16 @@ pub fn start() {
                         }
                         bridge.post_ready();
                     }
-                    Ok(Box::new(WebShell { app, inbox, bridge: app_bridge, prefs }))
+                    Ok(Box::new(WebShell { app, inbox, bridge: app_bridge, prefs, kobridge: kobridge.clone() }))
                 }),
             )
             .await;
         if let (Err(e), Some(bridge)) = (&result, &bridge) {
             bridge.post_failed(&format!("{e:?}"));
+        }
+        match &result {
+            Ok(()) => kobridge_ready.set_ready(),
+            Err(e) => kobridge_ready.emit(serde_json::json!({"type": "error", "error": format!("{e:?}")})),
         }
         if let Some(el) = document.get_element_by_id(LOADING_ID) {
             match result {
@@ -125,6 +141,8 @@ struct WebShell {
     inbox: Inbox,
     bridge: Option<crate::host::Bridge>,
     prefs: crate::prefs::PrefsSync,
+    /// KoAssist: the same-page bridge (`window.gridcraft`).
+    kobridge: crate::bridge::Bridge,
 }
 
 fn local_storage() -> Option<web_sys::Storage> {
@@ -153,6 +171,8 @@ impl eframe::App for WebShell {
                 }
             });
         }
+        // Requests from the page (KoAssist bridge) run on the UI thread, before this frame's logic.
+        self.kobridge.drain(&mut self.app, ctx);
         self.app.logic(ctx);
         // Store changed preferences straight away: a reload or closed tab runs no exit code (#1562).
         let changed = self.prefs.changed(&self.app);
@@ -180,10 +200,11 @@ impl eframe::App for WebShell {
         if let Some(bridge) = &self.bridge {
             bridge.sync(&mut self.app);
         }
+        self.kobridge.sync(&mut self.app);
     }
 }
 
-fn services(inbox: Inbox, ctx: egui::Context) -> Services {
+fn services(inbox: Inbox, ctx: egui::Context, bridge: crate::bridge::Bridge, embedded: bool) -> Services {
     let open_inbox = inbox.clone();
     let picture_ctx = ctx.clone();
     Services {
@@ -215,7 +236,14 @@ fn services(inbox: Inbox, ctx: egui::Context) -> Services {
                 ctx.request_repaint();
             });
         })),
-        download: Some(Box::new(|name: &str, bytes: &[u8]| {
+        download: Some(Box::new(move |name: &str, bytes: &[u8]| {
+            // KoAssist: embedded, a save the person asked for (Ctrl+S, Save) is the page's to
+            // make (`saveRequested`, the page then calls `gridcraft.save()`); otherwise the
+            // browser downloads the bytes.
+            if embedded {
+                bridge.emit(serde_json::json!({"type": "saveRequested", "path": name}));
+                return;
+            }
             if let Err(e) = download(name, bytes) {
                 log::error!("download of {name} failed: {e}");
             }

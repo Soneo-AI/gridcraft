@@ -215,7 +215,7 @@ impl Language {
             Self::Nl => nl::translate(text),
             Self::Ro => ro::translate(text),
         };
-        translated.unwrap_or_else(|| text.rsplit_once('|').map_or(text, |(_, label)| label))
+        brand(translated.unwrap_or_else(|| text.rsplit_once('|').map_or(text, |(_, label)| label)))
     }
 
     pub(crate) fn tr_error(self, message: &str) -> String {
@@ -504,5 +504,54 @@ mod tests {
         let keys: Vec<String> = order[1..].iter().map(|l| name_sort_key(l.name())).collect();
         assert!(keys.windows(2).all(|w| w[0] <= w[1]), "{keys:?}");
         assert_eq!(name_sort_key("Čeština"), "cestina");
+    }
+}
+
+/// The product name an embedding host shows in place of "GridCraft" (KoAssist). Set once at
+/// start; every label that names GridCraft is rewritten on its way out of [`Language::tr`] and
+/// cached (leaked once per label, never per frame).
+static PRODUCT_NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+static BRANDED: std::sync::Mutex<Vec<(String, &'static str)>> = std::sync::Mutex::new(Vec::new());
+
+pub fn set_product_name(name: &str) {
+    let _ = PRODUCT_NAME.set(name.trim().to_string());
+}
+
+/// What the interface calls the app: "GridCraft", or the host's name.
+pub fn product_name() -> &'static str {
+    PRODUCT_NAME.get().map(String::as_str).filter(|n| !n.is_empty()).unwrap_or("GridCraft")
+}
+
+fn brand(s: &str) -> &str {
+    let Some(name) = PRODUCT_NAME.get() else { return s };
+    let Some(replaced) = branded_text(s, name) else { return s };
+    let mut cache = BRANDED.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((_, out)) = cache.iter().find(|(original, _)| original == s) {
+        return out;
+    }
+    let out: &'static str = Box::leak(replaced.into_boxed_str());
+    cache.push((s.to_string(), out));
+    out
+}
+
+/// `s` with "GridCraft" replaced by `name`, or `None` when there is nothing to replace.
+fn branded_text(s: &str, name: &str) -> Option<String> {
+    if name.is_empty() || name == "GridCraft" || !s.contains("GridCraft") {
+        return None;
+    }
+    Some(s.replace("GridCraft", name))
+}
+
+#[cfg(test)]
+mod brand_tests {
+    use super::*;
+
+    /// Pure: the process-wide name stays unset here, other tests look for GridCraft's own labels.
+    #[test]
+    fn a_host_name_replaces_gridcraft_in_a_label() {
+        assert_eq!(branded_text("GridCraft Options", "KoAssist").as_deref(), Some("KoAssist Options"));
+        assert_eq!(branded_text("Bold", "KoAssist"), None);
+        assert_eq!(branded_text("GridCraft", ""), None);
+        assert_eq!(brand("GridCraft"), "GridCraft", "no name set: labels pass through");
     }
 }
