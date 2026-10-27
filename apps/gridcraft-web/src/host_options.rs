@@ -6,6 +6,7 @@
 //! ```js
 //! window.koassistSheetOptions = {
 //!   embedded: true,              // no title bar, no File tab (the host owns the file)
+//!   hidden_tabs: ["Automate"],   // ribbon tabs left undrawn (ids from ribbon::TABS)
 //!   language: "de",              // i18n::Language code
 //!   theme: "light" | "dark" | "system",   // view.theme
 //!   author: "Erika Mustermann",  // signs notes and comments
@@ -18,7 +19,7 @@
 //! options leave the app as it is; a wrong value is logged and skipped, never fatal.
 //!
 //! Host methods (answered like control methods): `host.tokens {light?, dark?}`,
-//! `host.chrome {title_bar?, file_tab?}`, `host.author {name}`, `host.product {name}`.
+//! `host.chrome {title_bar?, file_tab?, hidden_tabs?}`, `host.author {name}`, `host.product {name}`.
 
 use gridcraft_ui_egui::control::Outcome;
 use gridcraft_ui_egui::i18n::Language;
@@ -31,6 +32,7 @@ const MAX_AUTHOR_CHARS: usize = 200;
 #[derive(Debug, Default)]
 pub struct HostOptions {
     pub embedded: bool,
+    pub hidden_tabs: Option<Vec<String>>,
     pub language: Option<String>,
     pub theme: Option<String>,
     pub author: Option<String>,
@@ -61,6 +63,7 @@ pub fn from_value(value: &Value) -> HostOptions {
     let text = |key: &str| value.get(key).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
     HostOptions {
         embedded: value.get("embedded").and_then(Value::as_bool).unwrap_or(false),
+        hidden_tabs: tab_list(value.get("hidden_tabs")),
         language: text("language"),
         theme: text("theme"),
         author: text("author"),
@@ -72,7 +75,10 @@ pub fn from_value(value: &Value) -> HostOptions {
 /// Apply the options to the app (before its first frame).
 pub fn apply(app: &mut SheetApp, options: &HostOptions) {
     if options.embedded {
-        app.chrome = Chrome { title_bar: false, file_tab: false };
+        app.chrome = Chrome { title_bar: false, file_tab: false, ..Default::default() };
+    }
+    if let Some(tabs) = &options.hidden_tabs {
+        app.chrome.hidden_tabs = tabs.clone();
     }
     if let Some(name) = &options.product_name {
         gridcraft_ui_egui::i18n::set_product_name(name);
@@ -96,6 +102,12 @@ pub fn apply(app: &mut SheetApp, options: &HostOptions) {
     {
         log::warn!("koassistSheetOptions.tokens: {e}");
     }
+}
+
+/// A JSON array of tab ids (`["Automate"]`), trimmed, without empties; `None` when absent.
+fn tab_list(value: Option<&Value>) -> Option<Vec<String>> {
+    let items = value?.as_array()?;
+    Some(items.iter().filter_map(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).collect())
 }
 
 fn set_author(app: &mut SheetApp, author: &str) {
@@ -139,7 +151,10 @@ pub fn handle(app: &mut SheetApp, method: &str, p: &Value) -> Option<Outcome> {
             if let Some(on) = p.get("file_tab").and_then(Value::as_bool) {
                 app.chrome.file_tab = on;
             }
-            ok(json!({"title_bar": app.chrome.title_bar, "file_tab": app.chrome.file_tab}))
+            if let Some(tabs) = tab_list(p.get("hidden_tabs")) {
+                app.chrome.hidden_tabs = tabs;
+            }
+            ok(json!({"title_bar": app.chrome.title_bar, "file_tab": app.chrome.file_tab, "hidden_tabs": app.chrome.hidden_tabs}))
         }
         "host.author" => {
             if let Some(name) = p.get("name").and_then(Value::as_str) {

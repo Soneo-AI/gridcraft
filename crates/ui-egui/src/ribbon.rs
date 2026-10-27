@@ -66,9 +66,14 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
                     if app.chrome.file_tab {
                         file_menu(app, ui);
                     }
-                    let mut tabs: Vec<&str> = TABS.to_vec();
+                    let mut tabs: Vec<&str> = TABS.iter().copied().filter(|tab| !app.chrome.hidden_tabs.iter().any(|h| h == tab)).collect();
                     let ctx_tabs = contextual_tabs(app);
                     tabs.extend(ctx_tabs.iter());
+                    // KoAssist: a host may hide the tab that was active (stored preferences, a
+                    // keytip); the ribbon then shows Home instead of an empty strip.
+                    if !tabs.iter().any(|tab| *tab == app.ui.ribbon_tab) {
+                        app.ui.ribbon_tab = "Home".into();
+                    }
                     for tab in tabs {
                         let active = app.ui.ribbon_tab == tab;
                         let contextual = ctx_tabs.contains(&tab);
@@ -79,17 +84,13 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
                         if resp.hovered() && !active {
                             ui.painter().rect_filled(r.shrink2(vec2(2.0, 4.0)), 5.0, t.hover);
                         }
-                        let color = if contextual {
-                            t.accent
-                        } else if active {
-                            t.text
-                        } else {
-                            t.text_dim
-                        };
+                        // KoAssist: the active tab reads like WordCraft's — accent text and an
+                        // underline as wide as the label, not a short dash under its middle.
+                        let color = if contextual || active { t.accent } else { t.text_dim };
                         ui.painter().text(r.center(), Align2::CENTER_CENTER, label, if active { theme::ui_bold(13.5) } else { font }, color);
                         if active {
-                            let ul = Rect::from_center_size(pos2(r.center().x, r.bottom() - 3.0), vec2(tw.clamp(20.0, 40.0), 3.0));
-                            ui.painter().rect_filled(ul, 1.5, t.accent);
+                            let ul = Rect::from_center_size(pos2(r.center().x, r.bottom() - 2.0), vec2(r.width() - 16.0, 3.0));
+                            ui.painter().rect_filled(ul, 2.0, t.accent);
                         }
                         if resp.clicked() {
                             if active && !collapsed {
