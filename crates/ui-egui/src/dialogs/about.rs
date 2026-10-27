@@ -3,6 +3,13 @@ use super::*;
 /// Help ▸ About GridCraft: the app, its contributors and the AI models that helped. The credits
 /// are compiled in (`crate::credits`, docs/contributors.md).
 pub(super) fn about(ui: &mut egui::Ui, d: &mut Dialog) {
+    // An embedding host's product (KoAssist): its name and version, none of the upstream
+    // links or credits.
+    if crate::i18n::product_name() != "GridCraft" {
+        ui.heading(crate::i18n::product_name());
+        ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
+        return;
+    }
     ui.horizontal(|ui| {
         for tab in ["About", "Contributors", "Models"] {
             if ui.selectable_label(d.tab == tab, tab).clicked() {

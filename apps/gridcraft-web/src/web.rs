@@ -5,12 +5,15 @@ use gridcraft_ui_egui::{Inbox, Services, SheetApp};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen::JsValue;
 
-const CANVAS_ID: &str = "gridcraft_canvas";
-const LOADING_ID: &str = "gridcraft_loading";
+// KoAssist: the page names the canvas after the product (`window.koassistSheet` is the bridge).
+const CANVAS_ID: &str = "koassist_sheet_canvas";
+const LOADING_ID: &str = "koassist_sheet_loading";
 
 /// Starts the eframe web runner for the GridCraft canvas. It adjusts the WebGPU device limits to the adapter's, optionally selects the WebGL backend from the query string, and builds the shell with the requested sample or host bridge, browser language rules, stored preferences and the loading/error page state.
 pub fn start() {
-    eframe::WebLogger::init(log::LevelFilter::Info).ok();
+    // KoAssist: embedded, only warnings reach the console (log targets name the crates).
+    let level = if crate::host_options::read().embedded { log::LevelFilter::Warn } else { log::LevelFilter::Info };
+    eframe::WebLogger::init(level).ok();
     wasm_bindgen_futures::spawn_local(async {
         let Some(document) = web_sys::window().and_then(|w| w.document()) else {
             log::error!("no document");
@@ -41,8 +44,8 @@ pub fn start() {
         // workbooks in it and stores what it saves (`host`).
         let bridge = if query_param("host").as_deref() == Some("parent") { crate::host::Bridge::new() } else { None };
         let app_bridge = bridge.clone();
-        // KoAssist: the page that holds the canvas drives the app through `window.gridcraft`
-        // (`bridge`) and sets `window.gridcraftOptions` before the start (`host_options`).
+        // KoAssist: the page that holds the canvas drives the app through `window.koassistSheet`
+        // (`bridge`) and sets `window.koassistSheetOptions` before the start (`host_options`).
         let inbox: Inbox = Inbox::default();
         let kobridge = crate::bridge::Bridge::default();
         if let Err(e) = kobridge.install(inbox.clone()) {
@@ -141,7 +144,7 @@ struct WebShell {
     inbox: Inbox,
     bridge: Option<crate::host::Bridge>,
     prefs: crate::prefs::PrefsSync,
-    /// KoAssist: the same-page bridge (`window.gridcraft`).
+    /// KoAssist: the same-page bridge (`window.koassistSheet`).
     kobridge: crate::bridge::Bridge,
 }
 
@@ -238,7 +241,7 @@ fn services(inbox: Inbox, ctx: egui::Context, bridge: crate::bridge::Bridge, emb
         })),
         download: Some(Box::new(move |name: &str, bytes: &[u8]| {
             // KoAssist: embedded, a save the person asked for (Ctrl+S, Save) is the page's to
-            // make (`saveRequested`, the page then calls `gridcraft.save()`); otherwise the
+            // make (`saveRequested`, the page then calls `koassistSheet.save()`); otherwise the
             // browser downloads the bytes.
             if embedded {
                 bridge.emit(serde_json::json!({"type": "saveRequested", "path": name}));

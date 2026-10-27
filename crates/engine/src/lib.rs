@@ -42,6 +42,14 @@ pub use gridcraft_numfmt as numfmt;
 pub use selection::Selection;
 pub use windows::{Target, TargetGuard, WindowState, WindowView};
 
+/// Name the product in everything the engine writes (workbook properties, pivot caches,
+/// hidden-name comments, solver reports, PDF metadata) and in the default comment author.
+/// An embedding host calls this once at start; unset, it all says "GridCraft".
+pub fn set_product_name(name: &str) {
+    gridcraft_core::product::set_product_name(name);
+    gridcraft_pdf::set_application_name(name);
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {
     #[error("unknown command `{0}`")]
@@ -394,7 +402,7 @@ impl Default for Prefs {
         Prefs {
             enter_direction: "down".into(),
             autocomplete: true,
-            user_name: "GridCraft User".into(),
+            user_name: format!("{} User", gridcraft_core::product::product_name()),
             default_font: gridcraft_model::DEFAULT_FONT.into(),
             default_font_size: gridcraft_model::DEFAULT_FONT_SIZE,
             sheets_in_new_workbook: 1,

@@ -48,7 +48,7 @@ pub(crate) fn tick(app: &mut SheetApp, ctx: &egui::Context) {
     };
     if let Some(message) = outcome {
         rt.updater.dismiss_status();
-        app.message = Some(("GridCraft".into(), message));
+        app.message = Some((crate::i18n::product_name().into(), message));
     }
 }
 

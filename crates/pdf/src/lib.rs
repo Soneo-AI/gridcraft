@@ -17,6 +17,22 @@ mod metrics;
 
 use std::fmt::Write as _;
 
+/// The application named in `/Producer` and as the default `/Creator`; set once by an
+/// embedding host (see `gridcraft_engine::set_product_name`), "GridCraft" otherwise.
+static APPLICATION_NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Name the application once (the first non-empty name wins).
+pub fn set_application_name(name: &str) {
+    let name = name.trim();
+    if !name.is_empty() {
+        let _ = APPLICATION_NAME.set(name.to_string());
+    }
+}
+
+fn application_name() -> &'static str {
+    APPLICATION_NAME.get().map(String::as_str).unwrap_or("GridCraft")
+}
+
 /// RGB colour, 0–255 per channel.
 pub type Rgb = [u8; 3];
 
@@ -844,8 +860,8 @@ impl PdfDoc {
         objects.push((1, b"<< /Type /Catalog /Pages 2 0 R >>".to_vec()));
         let kids_s: Vec<String> = kids.iter().map(|k| format!("{k} 0 R")).collect();
         objects.push((2, format!("<< /Type /Pages /Kids [{}] /Count {} >>", kids_s.join(" "), kids.len()).into_bytes()));
-        let creator = if self.info.creator.is_empty() { "GridCraft" } else { &self.info.creator };
-        let mut info = format!("<< /Producer {} /Creator {}", pdf_text_string("GridCraft PDF"), pdf_text_string(creator));
+        let creator = if self.info.creator.is_empty() { application_name() } else { &self.info.creator };
+        let mut info = format!("<< /Producer {} /Creator {}", pdf_text_string(&format!("{} PDF", application_name())), pdf_text_string(creator));
         if !self.info.title.is_empty() {
             let _ = write!(info, " /Title {}", pdf_text_string(&self.info.title));
         }

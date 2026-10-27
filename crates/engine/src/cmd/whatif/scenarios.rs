@@ -67,7 +67,7 @@ fn store_scenarios(wb: &mut Workbook, list: &[Scenario]) {
             .map(|c| format!("\"{}\"", c.iter().collect::<String>().replace('"', "\"\"")))
             .collect::<Vec<_>>()
             .join("&"),
-        comment: "GridCraft Scenario Manager data".into(),
+        comment: format!("{} Scenario Manager data", gridcraft_core::product::product_name()),
         hidden: true,
     });
 }

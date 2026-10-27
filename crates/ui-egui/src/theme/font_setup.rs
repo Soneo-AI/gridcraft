@@ -444,6 +444,8 @@ fn font_definitions_impl(language: crate::i18n::Language, used: &[String], syste
         fonts.families.insert(FontFamily::Name(role.into()), chain);
         bound.push(role.to_string());
     }
+    #[cfg(target_arch = "wasm32")]
+    embed_interface_fonts(&mut fonts);
     // Installed workbook fonts, so a cell's chosen font actually renders in it.
     if system {
         for family in crate::fonts::installed_among(used) {
@@ -458,6 +460,8 @@ fn font_definitions_impl(language: crate::i18n::Language, used: &[String], syste
     if let Some(ui) = fonts.families.get(&FontFamily::Name(UI.into())).cloned() {
         fonts.families.insert(FontFamily::Proportional, ui);
     }
+    #[cfg(target_arch = "wasm32")]
+    lead_proportional_with_regular(&mut fonts);
     // The optional craft-fonts faces go at the very end of every family: a system or bundled face
     // that has the script keeps its glyph shapes, while the permitted OFL faces cover scripts and
     // symbols the host image lacks (Japanese, Korean, Thai, Arabic, Georgian and the UI symbols).
@@ -469,6 +473,47 @@ fn font_definitions_impl(language: crate::i18n::Language, used: &[String], syste
     bound.retain(|f| fonts.families.get(&FontFamily::Name(f.as_str().into())).is_some_and(|c| !c.is_empty()));
     crate::fonts::set_bound(bound);
     fonts
+}
+
+/// KoAssist: the browser build has no system fonts, so the interface would fall back to egui's
+/// bundled Ubuntu-Light. Inter (OFL, `assets/fonts`, the faces the WordCraft web build ships)
+/// leads the interface chains instead: Medium for the chrome drawn in [`ui_font`] (ribbon, tabs,
+/// status bar), SemiBold for [`ui_bold`], Regular for plain widget text — so both editors set
+/// their chrome in one face. Cells keep their own roles.
+#[cfg(target_arch = "wasm32")]
+fn embed_interface_fonts(fonts: &mut FontDefinitions) {
+    const INTER: &str = "inter";
+    const INTER_MEDIUM: &str = "inter-medium";
+    const INTER_SEMIBOLD: &str = "inter-semibold";
+    for (key, bytes) in [
+        (INTER, &include_bytes!("../../../../assets/fonts/Inter-Regular.ttf")[..]),
+        (INTER_MEDIUM, &include_bytes!("../../../../assets/fonts/Inter-Medium.ttf")[..]),
+        (INTER_SEMIBOLD, &include_bytes!("../../../../assets/fonts/Inter-SemiBold.ttf")[..]),
+    ] {
+        fonts.font_data.insert(key.into(), Arc::new(FontData::from_static(bytes)));
+    }
+    for (role, key) in [(UI, INTER_MEDIUM), (UI_BOLD, INTER_SEMIBOLD)] {
+        if let Some(chain) = fonts.families.get_mut(&FontFamily::Name(role.into())) {
+            chain.insert(0, key.into());
+        }
+    }
+    // Plain widget text (dialog bodies, buttons without an explicit font) in Regular, as in
+    // WordCraft; `font_definitions_impl` copies the UI chain to `Proportional` afterwards.
+    if let Some(chain) = fonts.families.get_mut(&FontFamily::Name(UI.into())) {
+        chain.insert(1, INTER.into());
+    }
+}
+
+/// KoAssist: plain widget text in Inter Regular while the `ui` role stays Medium-led (see
+/// [`embed_interface_fonts`]).
+#[cfg(target_arch = "wasm32")]
+fn lead_proportional_with_regular(fonts: &mut FontDefinitions) {
+    if let Some(chain) = fonts.families.get_mut(&FontFamily::Proportional)
+        && let Some(i) = chain.iter().position(|k| k == "inter")
+    {
+        let regular = chain.remove(i);
+        chain.insert(0, regular);
+    }
 }
 
 /// Builds one role family's chain: the loaded system face (or its role fallback), egui's bundled

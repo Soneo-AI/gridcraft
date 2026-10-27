@@ -515,6 +515,8 @@ static BRANDED: std::sync::Mutex<Vec<(String, &'static str)>> = std::sync::Mutex
 
 pub fn set_product_name(name: &str) {
     let _ = PRODUCT_NAME.set(name.trim().to_string());
+    // Files and formula results name the product too (app.xml, pivot caches, PDF metadata…).
+    gridcraft_engine::set_product_name(name);
 }
 
 /// What the interface calls the app: "GridCraft", or the host's name.

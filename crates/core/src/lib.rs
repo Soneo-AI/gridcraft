@@ -7,6 +7,7 @@ pub mod addr;
 pub mod color;
 pub mod date;
 pub mod parse;
+pub mod product;
 pub mod value;
 
 pub use addr::{

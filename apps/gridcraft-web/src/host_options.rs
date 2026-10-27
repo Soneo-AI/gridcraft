@@ -1,10 +1,10 @@
 //! Options the embedding page sets before GridCraft starts (KoAssist), and the host-only
-//! control methods it may call afterwards through `window.gridcraft.request`.
+//! control methods it may call afterwards through `window.koassistSheet.request`.
 //!
-//! The page assigns `window.gridcraftOptions` before it loads the bundle:
+//! The page assigns `window.koassistSheetOptions` before it loads the bundle:
 //!
 //! ```js
-//! window.gridcraftOptions = {
+//! window.koassistSheetOptions = {
 //!   embedded: true,              // no title bar, no File tab (the host owns the file)
 //!   language: "de",              // i18n::Language code
 //!   theme: "light" | "dark" | "system",   // view.theme
@@ -38,10 +38,10 @@ pub struct HostOptions {
     pub tokens: Option<Value>,
 }
 
-/// `window.gridcraftOptions`, if the page set it.
+/// `window.koassistSheetOptions`, if the page set it.
 pub fn read() -> HostOptions {
     let Some(window) = web_sys::window() else { return HostOptions::default() };
-    let Ok(raw) = js_sys::Reflect::get(&window, &"gridcraftOptions".into()) else { return HostOptions::default() };
+    let Ok(raw) = js_sys::Reflect::get(&window, &"koassistSheetOptions".into()) else { return HostOptions::default() };
     if raw.is_undefined() || raw.is_null() {
         return HostOptions::default();
     }
@@ -49,7 +49,7 @@ pub fn read() -> HostOptions {
     let value: Value = match text.as_deref().map(serde_json::from_str::<Value>) {
         Some(Ok(v)) => v,
         _ => {
-            log::warn!("gridcraftOptions: not JSON; ignored");
+            log::warn!("koassistSheetOptions: not JSON; ignored");
             return HostOptions::default();
         }
     };
@@ -83,17 +83,17 @@ pub fn apply(app: &mut SheetApp, options: &HostOptions) {
     if let Some(code) = &options.language {
         match Language::parse(code) {
             Some(language) => app.ui.language = language,
-            None => log::warn!("gridcraftOptions.language: unknown `{code}`"),
+            None => log::warn!("koassistSheetOptions.language: unknown `{code}`"),
         }
     }
     if let Some(mode) = &options.theme {
         if let Err(e) = app.run("view.theme", json!({"mode": mode})) {
-            log::warn!("gridcraftOptions.theme: {e}");
+            log::warn!("koassistSheetOptions.theme: {e}");
         }
     }
     if let Some(tokens) = &options.tokens {
         if let Err(e) = apply_tokens(tokens) {
-            log::warn!("gridcraftOptions.tokens: {e}");
+            log::warn!("koassistSheetOptions.tokens: {e}");
         }
     }
 }

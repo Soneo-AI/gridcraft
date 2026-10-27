@@ -189,7 +189,7 @@ pub fn set(wb: &mut Workbook, key: &str, text: &str) -> Result<()> {
     }
     remove(wb, key);
     for (i, formula) in formulas.into_iter().enumerate() {
-        wb.names.push(DefinedName { name: format!("{PREFIX}{key}_{i}"), scope: None, formula, comment: "GridCraft data".into(), hidden: true });
+        wb.names.push(DefinedName { name: format!("{PREFIX}{key}_{i}"), scope: None, formula, comment: format!("{} data", gridcraft_core::product::product_name()), hidden: true });
     }
     Ok(())
 }

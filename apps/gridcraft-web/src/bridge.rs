@@ -1,17 +1,17 @@
 //! JavaScript bridge for embedding GridCraft in another web app on the same page (KoAssist).
 //!
 //! Unlike `host.rs` (a `postMessage` bridge for a framing page), this one speaks to the page that
-//! holds the canvas, as `window.gridcraft`, and exposes the control layer
+//! holds the canvas, as `window.koassistSheet`, and exposes the control layer
 //! ([`gridcraft_ui_egui::control`]) as it is:
 //!
 //! ```js
-//! gridcraft.open(name, bytes)            // Uint8Array → the app opens it like a dropped file
-//! gridcraft.request(method, params)      // Promise<result>: any control method
+//! koassistSheet.open(name, bytes)            // Uint8Array → the app opens it like a dropped file
+//! koassistSheet.request(method, params)      // Promise<result>: any control method
 //!                                        // (engine.execute, document.inspect, sheet.read, …)
-//! gridcraft.execute(command, params)     // Promise<result>: shorthand for engine.execute
-//! gridcraft.save()                       // Promise<{bytes: Uint8Array, name}>: the workbook, no download
-//! gridcraft.onEvent(callback)            // callback({type: "ready" | "dirty" | "saveRequested" | "error", …})
-//! gridcraft.ready                        // true once the app runs
+//! koassistSheet.execute(command, params)     // Promise<result>: shorthand for engine.execute
+//! koassistSheet.save()                       // Promise<{bytes: Uint8Array, name}>: the workbook, no download
+//! koassistSheet.onEvent(callback)            // callback({type: "ready" | "dirty" | "saveRequested" | "error", …})
+//! koassistSheet.ready                        // true once the app runs
 //! ```
 //!
 //! Requests are queued and answered from the UI thread on the next frame ([`Bridge::drain`] runs
@@ -114,7 +114,7 @@ impl Bridge {
         }
     }
 
-    /// Install `window.gridcraft`. `inbox` receives opened files, exactly like dropped ones.
+    /// Install `window.koassistSheet`. `inbox` receives opened files, exactly like dropped ones.
     pub fn install(&self, inbox: Inbox) -> Result<(), String> {
         let window = web_sys::window().ok_or("no window")?;
         let api = js_sys::Object::new();
@@ -184,14 +184,14 @@ impl Bridge {
         on_event.forget();
 
         js_sys::Reflect::set(&api, &"ready".into(), &JsValue::FALSE).map_err(js)?;
-        js_sys::Reflect::set(&window, &"gridcraft".into(), &api).map_err(js)?;
+        js_sys::Reflect::set(&window, &"koassistSheet".into(), &api).map_err(js)?;
         Ok(())
     }
 
     /// Mark the API ready (the app runs) and tell listeners.
     pub fn set_ready(&self) {
         if let Some(window) = web_sys::window()
-            && let Ok(api) = js_sys::Reflect::get(&window, &"gridcraft".into())
+            && let Ok(api) = js_sys::Reflect::get(&window, &"koassistSheet".into())
         {
             let _ = js_sys::Reflect::set(&api, &"ready".into(), &JsValue::TRUE);
         }
