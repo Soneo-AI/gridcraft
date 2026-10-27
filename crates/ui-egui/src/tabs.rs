@@ -415,8 +415,14 @@ pub fn status_bar(app: &mut SheetApp, ui: &mut Ui) {
                         }
                     }
                     ui.add_space(16.0);
-                    // The layout runs right to left, so the last statistic is drawn first.
+                    // The layout runs right to left, so the last statistic is drawn first. In a narrow
+                    // window the row would run into the mode text on the left; what does not fit is
+                    // left out, the leftmost statistic first.
                     for p in selection_statistics(app).into_iter().rev() {
+                        let width = ui.painter().layout_no_wrap(p.clone(), theme::ui_font(12.5), t.text_dim).size().x;
+                        if ui.available_width() < width + 10.0 {
+                            break;
+                        }
                         text(ui, egui::RichText::new(p).font(theme::ui_font(12.5)).color(t.text_dim));
                         ui.add_space(10.0);
                     }
