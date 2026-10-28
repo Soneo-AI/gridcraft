@@ -52,9 +52,21 @@ pub(super) fn sort(s: &mut Session, p: &Json) -> Result<Json> {
                 }
                 None => None,
             };
-            row.or_else(|| col_param(k.get("column"), r.start.row))
+            match (row, k.get("column")) {
+                (Some(row), _) => Some(row),
+                (None, Some(v)) => Some(col_param(Some(v), r.start.row).ok_or_else(|| bad("data.sort", format!("sort key column `{v}` is not a row number or column letter")))?),
+                (None, None) => None,
+            }
         } else {
-            col_param(k.get("column"), r.start.col)
+            // A key names a column letter (`"D"`), an offset, or — with a header row — the
+            // header text itself (`"Kurzbezeichnung 5"`). An unknown key is an error: skipping
+            // it silently left the range unsorted while the caller went on to delete rows.
+            match k.get("column") {
+                None => None,
+                Some(v) => Some(col_param(Some(v), r.start.col).or_else(|| header_col(sh, r, header, v)).ok_or_else(|| {
+                    bad("data.sort", format!("sort key column `{v}` is neither a column letter nor a header of the range"))
+                })?),
+            }
         };
         let Some(col) = col else { continue };
         keys.push(SortKey {
@@ -65,6 +77,9 @@ pub(super) fn sort(s: &mut Session, p: &Json) -> Result<Json> {
         });
     }
     if keys.is_empty() {
+        if p.get("keys").is_some() {
+            return Err(bad("data.sort", "`keys` is empty: name at least one sort key"));
+        }
         s.ui_requests.push(crate::UiRequest::Dialog("sort".into(), json!({"range": r.a1(), "header": header})));
         return ok();
     }
@@ -72,6 +87,18 @@ pub(super) fn sort(s: &mut Session, p: &Json) -> Result<Json> {
         return Err(bad("data.sort", "too many sort levels (64 max)"));
     }
     do_sort(s, sheet, r, header, keys, by_cols, case)
+}
+
+/// The column of `r` whose header cell reads `v` (trimmed, case-insensitive) — only with a
+/// header row; `None` when no header matches.
+fn header_col(sh: &Sheet, r: RangeRef, header: bool, v: &Json) -> Option<u32> {
+    let want = v.as_str()?.trim();
+    if !header || want.is_empty() {
+        return None;
+    }
+    (r.start.col..=r.end.col).find(|&c| {
+        sh.value(CellRef::new(r.start.row, c)).as_text().is_some_and(|t| t.trim().eq_ignore_ascii_case(want))
+    })
 }
 
 fn do_sort(s: &mut Session, sheet: usize, r: RangeRef, header: bool, keys: Vec<SortKey>, by_cols: bool, case: bool) -> Result<Json> {

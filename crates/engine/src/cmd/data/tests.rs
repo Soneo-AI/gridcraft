@@ -507,3 +507,24 @@ fn a_rule_with_an_unknown_type_operator_or_error_style_is_refused() {
     assert_eq!(sh.validations.len(), 3);
     assert!(check_validation(&s.doc().unwrap().wb, 0, CellRef::parse("A2").unwrap(), "0").is_some());
 }
+
+#[test]
+fn sort_key_accepts_header_name_and_rejects_unknown_column() {
+    // KOASSIST-571: a key naming the header text was skipped silently; the range stayed
+    // unsorted and the caller deleted the wrong rows (Exit 0, nothing reported).
+    let mut s = Session::new();
+    s.new_workbook();
+    let values = json!([["Nr", "Kurzbezeichnung 5"], [1, "b"], [2, ""], [3, "a"]]);
+    s.execute("range.setValues", json!({"range": "A1", "values": values})).unwrap();
+    let keys = json!([{"column": "kurzbezeichnung 5", "order": "asc"}]);
+    s.execute("data.sort", json!({"range": "A1:B4", "header": true, "keys": keys})).unwrap();
+    let v = |s: &mut Session, a: &str| s.execute("cell.get", json!({"cell": a})).unwrap()["value"].clone();
+    assert_eq!((v(&mut s, "A2"), v(&mut s, "A3"), v(&mut s, "A4")), (json!(3.0), json!(1.0), json!(2.0)));
+    for keys in [json!([{"column": "Gibt es nicht"}]), json!([])] {
+        let err = s.execute("data.sort", json!({"range": "A1:B4", "header": true, "keys": keys})).unwrap_err();
+        assert!(matches!(err, EngineError::BadParams { .. }), "{err:?}");
+    }
+    // Without a header row the header text is not a key either.
+    let err = s.execute("data.sort", json!({"range": "A2:B4", "header": false, "keys": json!([{"column": "Kurzbezeichnung 5"}])})).unwrap_err();
+    assert!(matches!(err, EngineError::BadParams { .. }), "{err:?}");
+}
