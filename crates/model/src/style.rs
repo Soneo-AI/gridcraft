@@ -15,7 +15,11 @@ impl StyleId {
 }
 
 /// A colour: explicit RGB, a theme slot with tint, or automatic (black text / no fill).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+///
+/// Serialized as `"Auto"`, `{"Rgb": 3034005}` or `{"Theme": [4, 0]}`; deserialized from those
+/// AND from a hex string (`"#2E5395"`, `"2E5395"`, `"#FF2E5395"`) — the form every caller of the
+/// command API reaches for first (KoAssist: three refused attempts for one header colour).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Default)]
 pub enum Color {
     #[default]
     Auto,
@@ -24,6 +28,34 @@ pub enum Color {
     /// Theme index (0 = Background 1 / lt1, 1 = Text 1 / dk1, 2 = lt2, 3 = dk2, 4–9 = Accent 1–6,
     /// 10 hyperlink, 11 followed) and tint in thousandths (-1000..=1000).
     Theme(u8, i16),
+}
+
+impl<'de> Deserialize<'de> for Color {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        enum Tagged {
+            Auto,
+            Rgb(u32),
+            Theme(u8, i16),
+        }
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            Text(String),
+            Tagged(Tagged),
+        }
+        match Repr::deserialize(deserializer)? {
+            Repr::Text(s) if s.trim().eq_ignore_ascii_case("auto") => Ok(Color::Auto),
+            Repr::Text(s) => Color::from_hex(&s).ok_or_else(|| {
+                serde::de::Error::custom(format!(
+                    "not a colour: {s:?} (expected \"#RRGGBB\", \"Auto\", {{\"Rgb\": n}} or {{\"Theme\": [index, tint]}})"
+                ))
+            }),
+            Repr::Tagged(Tagged::Auto) => Ok(Color::Auto),
+            Repr::Tagged(Tagged::Rgb(v)) => Ok(Color::Rgb(v)),
+            Repr::Tagged(Tagged::Theme(i, tint)) => Ok(Color::Theme(i, tint)),
+        }
+    }
 }
 
 impl Color {
@@ -538,5 +570,21 @@ mod tests {
         let json = serde_json::to_string(&t).unwrap();
         assert!(json.contains("major_font_ea") && json.contains("游ゴシック"), "{json}");
         assert_eq!(serde_json::from_str::<Theme>(&json).unwrap(), t);
+    }
+
+    #[test]
+    fn color_json_reads_hex_strings_and_the_tagged_forms() {
+        // The tagged forms round-trip unchanged …
+        for c in [Color::Auto, Color::Rgb(0x2E5395), Color::Theme(4, -250)] {
+            let json = serde_json::to_string(&c).unwrap();
+            assert_eq!(serde_json::from_str::<Color>(&json).unwrap(), c, "{json}");
+        }
+        // … and a hex string, the form every caller reaches for first, is accepted too.
+        assert_eq!(serde_json::from_str::<Color>("\"#2E5395\"").unwrap(), Color::Rgb(0x2E5395));
+        assert_eq!(serde_json::from_str::<Color>("\"2e5395\"").unwrap(), Color::Rgb(0x2E5395));
+        assert_eq!(serde_json::from_str::<Color>("\"#FF2E5395\"").unwrap(), Color::Rgb(0x2E5395));
+        assert_eq!(serde_json::from_str::<Color>("\"auto\"").unwrap(), Color::Auto);
+        let err = serde_json::from_str::<Color>("\"blau\"").unwrap_err().to_string();
+        assert!(err.contains("#RRGGBB"), "{err}");
     }
 }
